@@ -56,4 +56,16 @@ Built a production-pattern two-tier AWS network with a bastion host, isolated pr
 
 ---
 
+## Lab 02 Highlight — S3 Encryption with KMS
+
+Built an S3 encryption lab using a customer-managed KMS key with a restrictive key policy. Validated with live tests:
+
+- ✅ Authorized IAM role can upload and download encrypted objects
+- ❌ Restricted IAM user with S3 read access gets `kms:Decrypt` denied — cannot download
+
+> S3 permissions and KMS key policies are independent access control layers. Having S3 read access is not enough when objects are encrypted with a customer-managed key. Both layers must explicitly allow the identity.
+
+**[→ View Lab 02](./lab-02-s3-encryption-KMS/)**
+
+---
 *Active study journey — labs added as completed. All resources terminated after each lab to stay within AWS Free Tier.*
