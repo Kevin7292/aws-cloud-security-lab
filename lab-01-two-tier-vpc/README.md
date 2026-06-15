@@ -1,10 +1,10 @@
-# Lab 01 — AWS Cloud Security Portfolio | SAA-C03 Study Journey
+# Lab 01 — Two-Tier VPC with S3 Gateway Endpoint
 
 ## Part 1: Create the VPC
 
-Created a new VPC named `lab01-vpc` with the CIDR block `10.0.0.0/16`.
+Created a VPC named `lab01-vpc` with CIDR block `10.0.0.0/16`.
 
-This gives the lab a dedicated network to build in and keeps the resources separated from anything else in the AWS account.
+This is the dedicated network everything in this lab lives in. Nothing here overlaps with anything else in my account.
 
 ![Create VPC](./screenshots/Part1_CreateVPC.png)
 
@@ -14,12 +14,12 @@ This gives the lab a dedicated network to build in and keeps the resources separ
 
 Created two subnets inside the VPC:
 
-| Subnet                 |    CIDR Block | Purpose              |
-| ---------------------- | ------------: | -------------------- |
-| `lab01-public-subnet`  | `10.0.1.0/24` | Bastion host         |
-| `lab01-private-subnet` | `10.0.2.0/24` | Private EC2 instance |
+| Subnet | CIDR Block | Purpose |
+|--------|------------|---------|
+| `lab01-public-subnet` | `10.0.1.0/24` | Bastion host |
+| `lab01-private-subnet` | `10.0.2.0/24` | Private EC2 |
 
-At this point, neither subnet has internet access.
+Neither subnet has internet access yet.
 
 ![Create Subnets](./screenshots/Part2_CreateSubnets.png)
 
@@ -27,9 +27,9 @@ At this point, neither subnet has internet access.
 
 ## Part 3: Attach an Internet Gateway
 
-Created an Internet Gateway named `lab01-igw` and attached it to `lab01-vpc`.
+Created `lab01-igw` and attached it to the VPC.
 
-Without the Internet Gateway, the VPC has no path to the internet. Even a public subnet needs an IGW and a route table entry before it can actually reach the internet.
+A VPC has no internet access out of the box. You need an internet gateway attached plus a route pointing to it before any traffic can leave.
 
 ![Attach IGW](./screenshots/Part3_CreateAttachIGW.png)
 
@@ -37,17 +37,15 @@ Without the Internet Gateway, the VPC has no path to the internet. Even a public
 
 ## Part 4: Configure Route Tables
 
-Created a public route table named `lab01-public-rt`.
+Created a public route table named `lab01-public-rt` and added a route:
 
-Added this route:
-
-| Destination | Target      |
-| ----------- | ----------- |
+| Destination | Target |
+|-------------|--------|
 | `0.0.0.0/0` | `lab01-igw` |
 
-Then associated the public route table with `lab01-public-subnet`.
+Associated it with the public subnet.
 
-The private subnet was left without an internet route on purpose. It only has local VPC routing, so it cannot reach the internet directly.
+The private subnet has no internet route on purpose. It can only communicate with other resources inside the VPC.
 
 ![Route Tables](./screenshots/Part4_RouteTables.png)
 
@@ -55,25 +53,19 @@ The private subnet was left without an internet route on purpose. It only has lo
 
 ## Part 5: Create Security Groups
 
-Created two Security Groups.
+### Bastion Security Group — `lab01-bastion-sg`
 
-### Bastion Security Group
+SSH on port 22 allowed from my IP only.
 
-`lab01-bastion-sg`
-
-Allowed SSH on port `22` from **my IP only**.
-
-This is better than allowing SSH from `0.0.0.0/0` because only my current public IP can reach the bastion.
+Allowing `0.0.0.0/0` would open it to the entire internet. Scoping it to my IP means only my machine can connect.
 
 ![Bastion Security Group](./screenshots/Part5_SecurityGroupBastion.png)
 
-### Private EC2 Security Group
+### Private EC2 Security Group — `lab01-private-sg`
 
-`lab01-private-sg`
+SSH allowed only from `lab01-bastion-sg`.
 
-Allowed SSH only from `lab01-bastion-sg`.
-
-This means the private EC2 cannot be reached directly from the internet. The only allowed SSH path is through the bastion host.
+This references the bastion's security group directly instead of an IP range. Only traffic coming from the bastion can reach this instance. Nothing from the internet can get to it directly.
 
 ![Private Security Group](./screenshots/Part5_SecurityGroupEC2.png)
 
@@ -81,7 +73,7 @@ This means the private EC2 cannot be reached directly from the internet. The onl
 
 ## Part 6: Launch Bastion Host
 
-Launched `lab01-bastion` using:
+Launched `lab01-bastion`:
 
 * Amazon Linux 2023
 * `t3.micro`
@@ -89,7 +81,7 @@ Launched `lab01-bastion` using:
 * Public IP enabled
 * `lab01-bastion-sg` attached
 
-The bastion host is the controlled entry point into the private subnet.
+The bastion is the only way into the private subnet. You connect to it first, then jump from there to the private EC2.
 
 ![Bastion Running](./screenshots/Part7_BastionRunning.png)
 
@@ -97,7 +89,7 @@ The bastion host is the controlled entry point into the private subnet.
 
 ## Part 7: Launch Private EC2
 
-Launched `lab01-private` using:
+Launched `lab01-private`:
 
 * Amazon Linux 2023
 * `t3.micro`
@@ -105,7 +97,7 @@ Launched `lab01-private` using:
 * No public IP
 * `lab01-private-sg` attached
 
-This instance has no public IP and no internet route, so it cannot be reached directly from outside the VPC.
+No public IP and no internet route. You cannot reach this instance from outside the VPC.
 
 ![Private EC2 Running](./screenshots/Part8_PrivateEC2Running.png)
 
@@ -115,23 +107,25 @@ This instance has no public IP and no internet route, so it cannot be reached di
 
 Created `lab01-private-nacl` and associated it with the private subnet.
 
-NACLs are stateless, which means return traffic is not automatically allowed. Both inbound and outbound rules have to be configured.
+Security groups are stateful. They track connections and automatically allow return traffic. NACLs are not. You have to write rules for both directions or connections will break.
 
 ### Inbound Rules
 
-| Rule | Type        |       Port | Source        | Action |
-| ---: | ----------- | ---------: | ------------- | ------ |
-|  100 | SSH         |         22 | `10.0.1.0/24` | Allow  |
-|  110 | Custom TCP  | 1024-65535 | `0.0.0.0/0`   | Allow  |
-|  200 | All traffic |        All | `0.0.0.0/0`   | Deny   |
+| Rule | Type | Port | Source | Action |
+|------|------|------|--------|--------|
+| 100 | SSH | 22 | `10.0.1.0/24` | Allow |
+| 110 | Custom TCP | 1024-65535 | `0.0.0.0/0` | Allow |
+| 200 | All traffic | All | `0.0.0.0/0` | Deny |
 
 ### Outbound Rules
 
-| Rule | Type        |       Port | Destination | Action |
-| ---: | ----------- | ---------: | ----------- | ------ |
-|   90 | HTTPS       |        443 | `0.0.0.0/0` | Allow  |
-|  100 | Custom TCP  | 1024-65535 | `0.0.0.0/0` | Allow  |
-|  200 | All traffic |        All | `0.0.0.0/0` | Deny   |
+| Rule | Type | Port | Destination | Action |
+|------|------|------|-------------|--------|
+| 90 | HTTPS | 443 | `0.0.0.0/0` | Allow |
+| 100 | Custom TCP | 1024-65535 | `0.0.0.0/0` | Allow |
+| 200 | All traffic | All | `0.0.0.0/0` | Deny |
+
+The ephemeral ports (1024-65535) are for return traffic. When a server responds to your request, it sends the response back on a random high port. If you do not allow that range inbound, the response gets dropped and the connection hangs.
 
 ![NACL Inbound](./screenshots/Part9_NACLInbound.png)
 
@@ -141,13 +135,9 @@ NACLs are stateless, which means return traffic is not automatically allowed. Bo
 
 ## Part 9: Create S3 Gateway Endpoint
 
-Created a VPC Gateway Endpoint named `lab01-s3-endpoint` for:
+Created a VPC Gateway Endpoint named `lab01-s3-endpoint` for `com.amazonaws.us-east-2.s3` and associated it with the private route table.
 
-`com.amazonaws.us-east-2.s3`
-
-Associated the endpoint with the private route table.
-
-AWS automatically added a route for S3 traffic through the endpoint. This lets the private EC2 reach S3 without using an Internet Gateway or NAT Gateway.
+AWS added a route for S3 traffic automatically. The private EC2 can now reach S3 without touching an internet gateway or NAT gateway. The traffic goes through AWS's internal network instead.
 
 ![S3 Endpoint Created](./screenshots/Part10_S3EndpointCreated.png)
 
@@ -157,54 +147,45 @@ AWS automatically added a route for S3 traffic through the endpoint. This lets t
 
 ## Part 10: Attach IAM Role to Private EC2
 
-Created an IAM role named `lab01-ec2-s3-role` with `AmazonS3ReadOnlyAccess`.
+Created `lab01-ec2-s3-role` with `AmazonS3ReadOnlyAccess` and attached it to `lab01-private`.
 
-Attached the role to `lab01-private`.
-
-EC2 instances do not get AWS permissions by default. The IAM role is the safer way to give the instance access to S3 without putting static credentials on the server.
+EC2 instances have no AWS permissions by default. An IAM role is the right way to grant access. No credentials on the server, nothing to rotate, nothing to accidentally expose.
 
 ---
 
 ## Part 11: Testing
 
-Connected to the bastion host first, then connected from the bastion to the private EC2.
-
-```bash
+Connected to the bastion first, then jumped to the private EC2:
 eval $(ssh-agent -s)
-ssh-add /path/to/lab01-keypair.pem
-ssh -A ec2-user@<BASTION-PUBLIC-IP>
-# From the bastion:
-ssh ec2-user@10.0.2.x
-```
 
-The `-A` flag enables SSH agent forwarding. This lets the bastion use my local SSH agent without copying the private key onto the bastion.
+ssh-add /path/to/lab01-keypair.pem
+
+ssh -A ec2-user@<BASTION-PUBLIC-IP>
+From the bastion:
+ssh ec2-user@10.0.2.x
+
+The `-A` flag is SSH agent forwarding. It lets the bastion use your local key to connect to the private EC2. You never copy the key file to the bastion.
 
 ![Bastion SSH Connected](./screenshots/Part11_SSH_BastionConnected.png)
 
 ![Private EC2 SSH Connected](./screenshots/Part11_SSH_Private_Connected.png)
 
-From inside the private EC2, I ran two tests:
-
-```bash
+From inside the private EC2:
 aws s3 ls --region us-east-2
-curl https://google.com --max-time 5
-```
 
-### Results
+curl https://google.com --max-time 5
 
 ![S3 Success and Internet Blocked](./screenshots/lab01-11-s3-endpoint-success.png)
 
-`aws s3 ls` returned the S3 bucket. This confirmed S3 was reachable through the VPC Gateway Endpoint.
+`aws s3 ls` returned my bucket. S3 works through the gateway endpoint with no internet access.
 
-`curl https://google.com --max-time 5` timed out after 5 seconds. This confirmed the private EC2 did not have general internet access.
+`curl` timed out after 5 seconds. The instance has no internet route and cannot reach anything outside AWS.
 
 ---
 
 ## Part 12: Cleanup
 
-Deleted the resources in dependency order to avoid charges and keep the AWS account clean.
-
-Cleanup steps:
+Deleted resources in order to avoid dependency errors:
 
 1. Terminated both EC2 instances
 2. Deleted the S3 bucket
@@ -224,87 +205,68 @@ Cleanup steps:
 
 ## Issue 1: SSH Permission Denied
 
-### Symptom
+### What happened
 
-I received this error when trying to connect to the bastion:
-
-```bash
 Permission denied (publickey)
-```
 
-### Root Cause
+### Why
 
-The SSH agent was not running, and the key was not loaded before connecting.
+The SSH agent was not running and the key was not loaded.
 
 ### Fix
-
-```bash
 eval $(ssh-agent -s)
+
 ssh-add /path/to/lab01-keypair.pem
+
 ssh -A ec2-user@<BASTION-IP>
-```
 
-### Lesson
+### What I learned
 
-The SSH key needs to be loaded into the local agent before using agent forwarding. The `-A` flag does not help if the key was never added to the agent in the first place.
+The `-A` flag forwards your key to the bastion. But if you never ran `ssh-add`, there is no key to forward. You have to load it into the agent first.
 
 ---
 
 ## Issue 2: `aws s3 ls` Hanging
 
-### Symptom
+### What happened
 
-The command hung after the IAM role was attached and the S3 endpoint route was confirmed.
+The command hung with no output and no error.
 
-```bash
-aws s3 ls --region us-east-2
-```
+The IAM role was attached. The S3 endpoint route was in the route table. Everything looked right.
 
-### What I Checked
+### What I checked
 
-* IAM role was attached
-* S3 endpoint route existed in the route table
-* Private EC2 had no public IP
-* Security Group rules looked correct
-* NACL rules were missing required traffic
+* IAM role attached: yes
+* S3 endpoint route in the route table: yes
+* No public IP on the private EC2: yes
+* Security group rules: fine
+* NACL rules: missing
 
-### Root Cause
+### Why
 
-The private NACL was blocking the traffic.
-
-NACLs are stateless, so I had to allow both sides of the connection:
-
-* Outbound HTTPS on port `443`
-* Inbound ephemeral ports `1024-65535` for return traffic
+The NACL was dropping return traffic. The outbound request on port 443 was leaving the subnet. But when the response came back on an ephemeral port, there was no inbound rule to allow it. The response got dropped silently.
 
 ### Fix
 
-Added these rules:
+* Outbound Rule 90: Allow HTTPS port 443
+* Inbound Rule 110: Allow TCP 1024-65535
 
-* Outbound Rule 90: Allow HTTPS `443`
-* Inbound Rule 110: Allow TCP `1024-65535`
+The command worked immediately after.
 
-After adding those rules, `aws s3 ls` returned results immediately.
+### What I learned
 
-### Lesson
-
-Security Groups are stateful. NACLs are stateless.
-
-That means Security Groups automatically allow return traffic, but NACLs do not. If the return path is not allowed, the connection can hang even when the route table and IAM role are correct.
-
-This is an important AWS networking concept and a good SAA-C03 exam topic.
+Security groups handle return traffic automatically. NACLs do not. If a NACL is missing a return traffic rule, the connection hangs without giving you a clear error. This is one of the most common AWS networking mistakes and a regular SAA-C03 exam topic.
 
 ---
 
 # Key Concepts Demonstrated
 
 * Public and private subnet design
-* Internet Gateway routing
+* Internet Gateway and route table configuration
 * Bastion host access pattern
-* Security Group source restrictions
-* Security Group references
-* Network ACL stateless behavior
-* S3 Gateway Endpoint access from a private subnet
-* IAM role access for EC2
-* Troubleshooting route, identity, and network control issues
-* Secure cleanup process
+* Security group source restrictions and references
+* NACL stateless behavior and ephemeral ports
+* S3 Gateway Endpoint for private S3 access
+* IAM role for EC2
+* Troubleshooting network and identity layers
+* Secure cleanup
