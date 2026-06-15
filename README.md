@@ -11,7 +11,7 @@ Hands-on AWS security labs built to demonstrate practical cloud security skills 
 | Lab | Topic | Key Concepts | Status |
 |-----|-------|-------------|--------|
 | [Lab 01](./lab-01-two-tier-vpc/) | Two-Tier VPC with S3 Gateway Endpoint | VPC, Subnets, Security Groups, NACLs, IAM Roles, VPC Endpoints | ✅ Complete |
-| Lab 02 | S3 Encryption with KMS | SSE-KMS, KMS Key Policies, IAM Roles, S3 Versioning, Lifecycle Rules | 🔜 Coming |
+| [Lab 02](./lab-02-s3-encryption-KMS/) | S3 Encryption with KMS | SSE-KMS, KMS Key Policies, IAM Roles, S3 Versioning, Lifecycle Rules | ✅ Complete |
 | Lab 03 | SQS + Lambda Pipeline | SQS, Lambda, DLQ, Async Processing, Serverless | 🔜 Coming |
 
 *More labs in progress — added as completed.*
